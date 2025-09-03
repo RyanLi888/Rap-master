@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # RAPIER
 
 Paper: Low-Quality Training Data Only? A Robust Framework for Detecting Encrypted Malicious Network Traffic
@@ -41,3 +42,6 @@ All data in `{data_dir}` should have dimensions of (*n*, 51), where *n* is the n
 
 Output:
 * `{result_dir}/{prediction.npy}: ` The prediction of all testing data. `1` is malicious and `0` is benign.
+=======
+# RAPIER-master
+>>>>>>> df2515880e6e8e3dbaf7832d298a6afd4bac3a26
