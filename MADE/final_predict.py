@@ -1,3 +1,15 @@
+"""
+MADE 最终预测与标签纠错模块
+=========================
+
+本文件使用多种传统机器学习模型的集成来对样本进行校正，
+将模型一致判定的样本划分为纠正后的 benign/malicious 集合，
+并输出纠正结果统计信息。
+
+作者: RAPIER 开发团队
+版本: 1.0
+"""
+
 import os
 import numpy as np
 import xgboost
@@ -8,8 +20,20 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.linear_model import LogisticRegression
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
-# Using an Ensemble of ML to correct remaining samples label.
+# 使用多模型集成来纠正剩余样本标签
 def main(feat_dir):
+    """
+    使用多个传统机器学习模型对样本进行投票纠错
+    
+    步骤：
+    1) 读取 groundtruth 与 unknown 集合
+    2) 训练多种分类器并对所有样本给出概率/预测
+    3) 进行多数投票，将高置信度样本划入纠正后的集合
+    4) 保存纠正后的 benign/malicious 特征，并输出统计
+    
+    参数:
+        feat_dir (str): 特征目录
+    """
 
     be_g = np.load(os.path.join(feat_dir, 'be_groundtruth.npy'))
     ma_g = np.load(os.path.join(feat_dir, 'ma_groundtruth.npy'))
@@ -88,6 +112,7 @@ def main(feat_dir):
     ensemble = ensemble + y_pred.astype(int)
     ensemble_pos = ensemble_pos + possibility
 
+    # 多数投票：>=4 判为恶意，其余为良性
     ensemble_pred = []
     ensemble_test = []
     be_num = 0
@@ -114,6 +139,7 @@ def main(feat_dir):
     np.save(os.path.join(feat_dir, 'be_corrected.npy'), be_all_final)
     np.save(os.path.join(feat_dir, 'ma_corrected.npy'), ma_all_final)
     
+    # 统计与日志
     wrong_be = be_all_final[:, -1].sum()
     wrong_ma = ma_all_final.shape[0] - ma_all_final[:, -1].sum()
     print('malicious in benign set: %d/%d'%(be_all_final.shape[0], wrong_be))

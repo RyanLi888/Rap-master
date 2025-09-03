@@ -10,6 +10,44 @@ RAPIER 主程序文件
 2. MADE: 多尺度对抗判别器，用于数据增强和生成
 3. Classifier: 分类器，用于最终的分类预测
 
+文件执行顺序分析：
+==================
+第一阶段：自编码器训练与特征提取
+├── 1. AE.train.main() → 调用 AE/train.py
+├── 2. AE.get_feat.main() × 3次 → 调用 AE/get_feat.py (处理be, ma, test数据)
+
+第二阶段：MADE模型训练与数据清理
+├── 3. MADE.train_epochs.main() → 调用 MADE/train_epochs.py
+├── 4. MADE.get_clean_epochs.main() → 调用 MADE/get_clean_epochs.py
+└── 5. MADE.final_predict.main() → 调用 MADE/final_predict.py
+
+第三阶段：对抗样本生成
+├── 6. generate_cpus() → 循环调用 generate()
+│   ├── MADE.train.main() × 2次 → 调用 MADE/train.py (训练be和ma的MADE)
+│   ├── MADE.predict.main() × 4次 → 调用 MADE/predict.py (4种组合预测)
+│   ├── MADE.train_gen_GAN.main() → 调用 MADE/train_gen_GAN.py
+│   └── MADE.generate_GAN.main() → 调用 MADE/generate_GAN.py
+
+第四阶段：分类器训练与预测
+└── 7. Classifier.classify.main() → 调用 Classifier/classify.py
+
+未直接运行但被导入的文件：
+==========================
+- MADE/__init__.py (模块初始化)
+- MADE/made.py (MADE模型定义，被其他模块调用)
+- MADE/gen_model.py (生成器模型定义，被GAN模块调用)
+- MADE/datasets/data_loaders.py (数据加载器，被训练模块调用)
+- MADE/datasets/myData.py (数据集类，被数据加载器调用)
+- MADE/utils/train.py (训练工具函数，被训练模块调用)
+- MADE/utils/validation.py (验证工具函数，被训练模块调用)
+- MADE/utils/test.py (测试工具函数，被预测模块调用)
+- MADE/utils/plot.py (绘图工具，训练过程中可选使用)
+- Classifier/__init__.py (模块初始化)
+- Classifier/model.py (MLP分类器模型定义)
+- Classifier/loss.py (Co-teaching损失函数)
+- AE/__init__.py (模块初始化)
+- AE/model.py (LSTM自编码器模型定义)
+
 作者: RAPIER 开发团队
 版本: 1.0
 """
@@ -44,20 +82,25 @@ def generate(feat_dir, model_dir, made_dir, index, cuda):
     TRAIN_ma = 'ma_corrected'  # 恶性样本修正标签
     TRAIN = 'corrected'         # 通用修正标签
     
-    # 训练MADE模型 - 分别针对良性(benign)和恶性(malignant)样本
+    # 【步骤6a】训练MADE模型 - 分别针对良性(benign)和恶性(malignant)样本
+    # 调用文件: MADE/train.py (两次，分别训练be和ma的MADE模型)
     MADE.train.main(feat_dir, model_dir, TRAIN_be, cuda, '-30')
     MADE.train.main(feat_dir, model_dir, TRAIN_ma, cuda, '-30')
     
-    # 使用训练好的MADE模型进行预测
+    # 【步骤6b】使用训练好的MADE模型进行预测
+    # 调用文件: MADE/predict.py (四次，4种不同的训练-预测组合)
     # 参数格式: (特征目录, 模型目录, MADE目录, 训练标签, 预测标签, CUDA设备)
     MADE.predict.main(feat_dir, model_dir, made_dir, TRAIN_be, TRAIN_be, cuda)  # 良性->良性
     MADE.predict.main(feat_dir, model_dir, made_dir, TRAIN_be, TRAIN_ma, cuda)  # 良性->恶性
     MADE.predict.main(feat_dir, model_dir, made_dir, TRAIN_ma, TRAIN_ma, cuda)  # 恶性->恶性
     MADE.predict.main(feat_dir, model_dir, made_dir, TRAIN_ma, TRAIN_be, cuda)  # 恶性->良性
 
-    # 训练GAN生成器，用于生成对抗样本
+    # 【步骤6c】训练GAN生成器，用于生成对抗样本
+    # 调用文件: MADE/train_gen_GAN.py
     MADE.train_gen_GAN.main(feat_dir, model_dir, made_dir, TRAIN, cuda)
-    # 使用训练好的GAN生成器生成对抗样本
+    
+    # 【步骤6d】使用训练好的GAN生成器生成对抗样本
+    # 调用文件: MADE/generate_GAN.py
     MADE.generate_GAN.main(feat_dir, model_dir, TRAIN, index, cuda)
 
 def generate_cpus(feat_dir, model_dir, made_dir, indices, cuda):
@@ -96,28 +139,33 @@ def main(data_dir, model_dir, feat_dir, made_dir, result_dir, cuda):
         cuda (int): CUDA设备ID
     """
     
-    # 第一步：训练自编码器模型
+    # 【步骤1】训练自编码器模型
+    # 调用文件: AE/train.py
     print("开始训练自编码器模型...")
     AE.train.main(data_dir, model_dir, cuda)
     
-    # 第二步：使用训练好的自编码器提取特征
+    # 【步骤2】使用训练好的自编码器提取特征
+    # 调用文件: AE/get_feat.py (三次，分别处理be, ma, test数据)
     print("开始提取特征...")
     AE.get_feat.main(data_dir, model_dir, feat_dir, 'be', cuda)    # 提取良性样本特征
     AE.get_feat.main(data_dir, model_dir, feat_dir, 'ma', cuda)    # 提取恶性样本特征
     AE.get_feat.main(data_dir, model_dir, feat_dir, 'test', cuda)  # 提取测试样本特征
 
-    # 第三步：训练MADE模型并进行数据清理
+    # 【步骤3】训练MADE模型并进行数据清理
+    # 调用文件: MADE/train_epochs.py, MADE/get_clean_epochs.py, MADE/final_predict.py
     print("开始训练MADE模型...")
     TRAIN = 'be'  # 使用良性样本进行训练
     MADE.train_epochs.main(feat_dir, model_dir, made_dir, TRAIN, cuda, '20')  # 训练20个epoch
     MADE.get_clean_epochs.main(feat_dir, made_dir, '0.5', TRAIN)  # 获取清理后的epoch，阈值0.5
     MADE.final_predict.main(feat_dir)  # 进行最终预测
     
-    # 第四步：生成对抗样本（为5个不同的索引生成）
+    # 【步骤4】生成对抗样本（为5个不同的索引生成）
+    # 调用文件: 通过generate_cpus()调用多个文件
     print("开始生成对抗样本...")
     generate_cpus(feat_dir, model_dir, made_dir, list(range(5)), cuda)
     
-    # 第五步：训练分类器并进行最终分类
+    # 【步骤5】训练分类器并进行最终分类
+    # 调用文件: Classifier/classify.py
     print("开始训练分类器...")
     TRAIN = 'corrected'  # 使用修正后的数据进行训练
     Classifier.classify.main(feat_dir, model_dir, result_dir, TRAIN, cuda, parallel=5)  # 使用5个并行进程

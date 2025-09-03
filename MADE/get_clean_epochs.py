@@ -1,3 +1,14 @@
+"""
+根据MADE分数清理训练样本
+========================
+
+本文件汇聚多个epoch的MADE负对数似然分数，先选取置信度高的benign，
+再基于相对距离划分malicious与unknown，导出 groundtruth 与 unknown 集合。
+
+作者: RAPIER 开发团队
+版本: 1.0
+"""
+
 from matplotlib import pyplot as plt
 import numpy as np
 import sys
@@ -6,8 +17,17 @@ import re
 from sklearn.cluster import DBSCAN
 
 def main(feat_dir, made_dir, alpha, TRAIN):
+    """
+    根据MADE分数与样本间距离，清理训练集。
+
+    参数:
+        feat_dir (str): 特征目录
+        made_dir (str): MADE分数目录
+        alpha (float|str): benign候选比例（0-1）
+        TRAIN (str): 训练集标识
+    """
     
-    # According to MADE-density, select true benign samples
+    # 根据MADE密度，选择置信度较高的benign样本
     alpha = float(alpha)
     be = np.load(os.path.join(feat_dir, 'be.npy'))  
     ma = np.load(os.path.join(feat_dir, 'ma.npy'))
@@ -19,11 +39,13 @@ def main(feat_dir, made_dir, alpha, TRAIN):
     NLogP = [0 for _ in range(be_number + ma_number)] 
     nlogp_lst = [[] for _ in range(be_number + ma_number)]
 
+    # 统计可用的epoch数量
     epochs = 0
     for filename in os.listdir(made_dir):
         if re.match('be_%s_\d+'%(TRAIN), filename):
             epochs = epochs + 1
 
+    # 融合后半段epoch的分数（更稳定）
     for i in range(epochs // 2, epochs): 
         epoch = (i + 1) * 10
         with open(os.path.join(made_dir, 'be_%sMADE_%d'%(TRAIN, epoch)), 'r') as fp:
@@ -42,6 +64,7 @@ def main(feat_dir, made_dir, alpha, TRAIN):
                 NLogP[i + be_number] = NLogP[i + be_number] + s
                 nlogp_lst[i + be_number].append(s)
 
+    # 按总分排序（越小越像benign）
     seq = list(range(len(NLogP)))
     seq.sort(key = lambda x: NLogP[x]) 
 
@@ -52,7 +75,7 @@ def main(feat_dir, made_dir, alpha, TRAIN):
         be_extract.append(feats[seq[i]])
         be_extract_lossline.append(nlogp_lst[seq[i]])
 
-    # According to the distances between pairs of samples, filter for more confidential benign samples.
+    # 根据互相距离过滤更可信的benign
     be_extract = np.array(be_extract)
 
     def gaussian(feat, target_set):
@@ -86,7 +109,7 @@ def main(feat_dir, made_dir, alpha, TRAIN):
 
     remain_index += seq[extract_range:]
 
-    # According to the distances between remaining samples and true benign samples, filter for more confidential malicious samples
+    # 对剩余样本，依据与benign的距离差，挑选malicious
     
     remain_index.sort(key = lambda x: -NLogP[x])  
     ma_extract = [feats[index] for index in remain_index]
@@ -132,6 +155,7 @@ def main(feat_dir, made_dir, alpha, TRAIN):
                 ma_unknown.append(feat)
                 ma_unknown_lossline.append(nlogp_lst[index])
 
+    # 打印统计
     be_num = 0
     ma_num = 0
     for feat in be_clean:
@@ -150,6 +174,7 @@ def main(feat_dir, made_dir, alpha, TRAIN):
             ma_num += 1
     print('ma_clean: {} be + {} ma.'.format(be_num, ma_num))
     
+    # 保存结果
     np.save(os.path.join(feat_dir, 'be_groundtruth.npy'), np.array(be_clean))
     np.save(os.path.join(feat_dir, 'ma_groundtruth.npy'), np.array(ma_clean))
     np.save(os.path.join(feat_dir, 'be_unknown.npy'), np.array(be_unknown))

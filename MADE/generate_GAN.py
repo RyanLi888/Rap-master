@@ -1,3 +1,14 @@
+"""
+使用训练好的生成器批量生成增强样本
+=============================
+
+从已训练的三类生成器（be/ma1/ma2）中采样，按对应训练集的统计量进行尺度还原，
+并将生成的特征保存到磁盘。
+
+作者: RAPIER 开发团队
+版本: 1.0
+"""
+
 from .gen_model import GEN
 from .made import MADE
 import torch
@@ -9,8 +20,18 @@ import os
 from sklearn.datasets import make_blobs
 import math
 
-# synthesize 3 types of samples.
+# 合成3类样本
 def main(feat_dir, model_dir, TRAIN, index, cuda_device):
+    """
+    使用已训练的生成器导出增强样本
+    
+    参数:
+        feat_dir (str): 特征目录
+        model_dir (str): 模型目录（包含生成器）
+        TRAIN (str): 训练标签后缀，例如 'corrected'
+        index (int): 当前生成批次编号
+        cuda_device (int|str): CUDA设备ID
+    """
 
     be = np.load(os.path.join(feat_dir, 'be_%s.npy'%(TRAIN)))[:, :32]
     ma = np.load(os.path.join(feat_dir, 'ma_%s.npy'%(TRAIN)))[:, :32]
@@ -38,7 +59,9 @@ def main(feat_dir, model_dir, TRAIN, index, cuda_device):
         MaGenModel_2 = MaGenModel_2.cuda()
 
     def generate(train_type, GenModel, total_size, seed):
-
+        """
+        根据训练集统计量对生成样本做尺度还原，并返回numpy数组。
+        """
         data_train = np.load(os.path.join(feat_dir, train_type + '.npy'))[:, :output_size]
         mu_train = torch.Tensor(data_train.mean(axis=0))
         s_train = torch.Tensor(data_train.std(axis=0))

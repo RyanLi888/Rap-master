@@ -1,3 +1,14 @@
+"""
+GAN 生成器训练模块（数据增强）
+=========================
+
+本文件训练三个生成器（良性NB、恶意MB、恶意MO）
+以在MADE密度模型的约束下合成特征数据，用于增强分类器训练。
+
+作者: RAPIER 开发团队
+版本: 1.0
+"""
+
 from .gen_model import GEN, MLP
 from .made import MADE
 import torch
@@ -9,8 +20,18 @@ import os
 from sklearn.datasets import make_blobs
 import math
 
-# train 3 GANs for data augmentation 
+# 训练3个GAN以进行数据增强 
 def main(feat_dir, model_dir, made_dir, TRAIN, cuda_device):
+    """
+    训练良性与两类恶意（MB/MO）生成器，使其在MADE概率模型下生成满足分布约束的样本。
+
+    参数:
+        feat_dir (str): 特征目录
+        model_dir (str): 模型目录（包含MADE与生成器）
+        made_dir (str): MADE得分目录（包含负对数似然文件）
+        TRAIN (str): 训练标签后缀，例如 'corrected'
+        cuda_device (int|str): CUDA设备ID
+    """
 
     train_type_be = 'be_' + TRAIN
     train_type_ma = 'ma_' + TRAIN
@@ -25,7 +46,7 @@ def main(feat_dir, model_dir, made_dir, TRAIN, cuda_device):
     dataset_name = 'myData'
     batch_size = 500
     hidden_dims = [512]
-    epochs = 500 # Modified
+    epochs = 500 # 训练轮数
     lr = 5e-3
 
     load_name_be = f"{model_name}_{dataset_name}_{train_type_be}_{'_'.join(str(d) for d in hidden_dims)}.pt"
@@ -39,6 +60,7 @@ def main(feat_dir, model_dir, made_dir, TRAIN, cuda_device):
     NLogP_be_sort = []
     NLogP_ma_sort = []
 
+    # 读取MADE得分（负对数似然）
     with open(os.path.join(made_dir, '%s_%sMADE'%(train_type_be, train_type_be)), 'r') as fp:
         for line in fp:
             s = float(line.strip())
@@ -56,6 +78,7 @@ def main(feat_dir, model_dir, made_dir, TRAIN, cuda_device):
     NLogP_be = np.array(NLogP_be)
     NLogP_ma = np.array(NLogP_ma)
 
+    # 区间阈值（基于分位数）
     be_MIN_ratio = 0.7
     be_MAX_ratio = 0.8
     be_min_ratio = 0.8
@@ -68,6 +91,7 @@ def main(feat_dir, model_dir, made_dir, TRAIN, cuda_device):
     be_max = NLogP_be_sort[int(be_max_ratio * len(NLogP_be))]
     ma_max = NLogP_ma_sort[int(ma_max_ratio * len(NLogP_ma))]
 
+    # 三个生成器
     MaGenModel_1 = GEN(input_size, hiddens, output_size, device)
     if device != None:
         torch.cuda.set_device(device)
@@ -83,6 +107,7 @@ def main(feat_dir, model_dir, made_dir, TRAIN, cuda_device):
         torch.cuda.set_device(device)
         BeGenModel = BeGenModel.cuda()
 
+    # 对应MADE密度模型
     BeMADE = torch.load(os.path.join(model_dir, load_name_be))
     if device != None:
         torch.cuda.set_device(device)
@@ -93,10 +118,12 @@ def main(feat_dir, model_dir, made_dir, TRAIN, cuda_device):
         torch.cuda.set_device(device)
         MaMADE = MaMADE.cuda()
 
+    # 优化器
     optimizer_be = torch.optim.Adam(BeGenModel.parameters(), lr=lr, weight_decay=1e-6)
     optimizer_ma1 = torch.optim.Adam(MaGenModel_1.parameters(), lr=lr, weight_decay=1e-6)
     optimizer_ma2 = torch.optim.Adam(MaGenModel_2.parameters(), lr=lr, weight_decay=1e-6)
 
+    # 判别器
     D = MLP(input_size=output_size, hiddens=[16, 8], output_size=2, device=device)
     if device != None:
         D.to_cuda(device)
@@ -104,6 +131,7 @@ def main(feat_dir, model_dir, made_dir, TRAIN, cuda_device):
     optimizer_D = torch.optim.Adam(D.parameters(), lr=lr)
     save_name_D = f"dis_{'_'.join(str(d) for d in hiddens)}.pt"
 
+    # 统计量
     be_mean = torch.Tensor(np.mean(be, axis=0))
     be_std = torch.Tensor(np.std(be, axis=0))
     ma_mean = torch.Tensor(np.mean(ma, axis=0))
@@ -118,6 +146,7 @@ def main(feat_dir, model_dir, made_dir, TRAIN, cuda_device):
     ma_in_minmax = ma[NLogP_ma > ma_max]
 
     def Entropy(GenModel, batch_size, seed):
+        """从二维高斯团生成隐空间点，经生成器映射为样本，并返回样本与简单分散度指标。"""
         X, _ = make_blobs(n_samples=batch_size, centers=[[0, 0]], n_features=2, random_state=seed)
         X = torch.Tensor(X)
         batch = GenModel.forward(X)
@@ -128,6 +157,7 @@ def main(feat_dir, model_dir, made_dir, TRAIN, cuda_device):
         return batch, H
 
     def get_NLogP(batch, MADE, Print=False):
+        """计算样本在MADE下的负对数似然。"""
         input = batch.float().cuda()
         out = MADE.forward(input)
         mu, logp = torch.chunk(out, 2, dim=1)
@@ -139,6 +169,7 @@ def main(feat_dir, model_dir, made_dir, TRAIN, cuda_device):
         return negloglik_loss
 
     def save_model(GenModel, save_name):
+        """保存生成器或判别器模型（CPU上保存），并恢复到GPU继续训练。"""
         GenModel = GenModel.cpu()
         GenModel.to_cpu()
         torch.save(GenModel, os.path.join(model_dir, save_name))
@@ -146,14 +177,14 @@ def main(feat_dir, model_dir, made_dir, TRAIN, cuda_device):
         GenModel = GenModel.cuda()
 
     for epoch in range(epochs):
-        # training Generator
+        # 训练生成器
         
-        # random generate samples
+        # 随机采样隐变量并生成样本
         batch_be, H_be = Entropy(BeGenModel, batch_size, epoch * 378 + 1782)
         batch_ma1, H_ma1 = Entropy(MaGenModel_1, batch_size, epoch * 263 + 3467)
         batch_ma2, H_ma2 = Entropy(MaGenModel_2, batch_size, epoch * 255 + 3353)
         
-        # calculate samples' density
+        # 计算密度分数
         NLogP_be_beMADE = get_NLogP(batch_be, BeMADE)
         NLogP_be_maMADE = get_NLogP((batch_be * be_std.cuda() + be_mean.cuda() - ma_mean.cuda()) / ma_std.cuda(), MaMADE)
         NLogP_ma1_beMADE = get_NLogP(batch_ma1, BeMADE)
@@ -161,7 +192,7 @@ def main(feat_dir, model_dir, made_dir, TRAIN, cuda_device):
         NLogP_ma2_beMADE = get_NLogP((batch_ma2 * ma_std.cuda() + ma_mean.cuda() - be_mean.cuda()) / be_std.cuda(), BeMADE)
         NLogP_ma2_maMADE = get_NLogP(batch_ma2, MaMADE)
         
-        # loss function for MB
+        # 三类目标的损失函数（靠近/远离特定分布区间）
         E1_ma1 = -torch.mean(NLogP_ma1_beMADE * NLogP_ma1_maMADE.ge(ma_max) * NLogP_ma1_beMADE.lt(be_min))
         E2_ma1 =  torch.mean(NLogP_ma1_beMADE * NLogP_ma1_maMADE.ge(ma_max) * NLogP_ma1_beMADE.gt(be_max))
         E3_ma1 = -torch.mean(NLogP_ma1_maMADE * NLogP_ma1_maMADE.lt(ma_max))
@@ -171,7 +202,7 @@ def main(feat_dir, model_dir, made_dir, TRAIN, cuda_device):
         )
         loss_ma1 = H_ma1 + E1_ma1 + E2_ma1 + E3_ma1 + fm_ma1
 
-        # loss function for MO
+        # MO
         E1_ma2 = -torch.mean(NLogP_ma2_maMADE * NLogP_ma2_beMADE.ge(be_max) * NLogP_ma2_maMADE.lt(ma_max))
         E2_ma2 = -torch.mean(NLogP_ma2_beMADE * NLogP_ma2_beMADE.lt(be_max))
         fm_ma2 = torch.linalg.norm(
@@ -180,7 +211,7 @@ def main(feat_dir, model_dir, made_dir, TRAIN, cuda_device):
         )
         loss_ma2 = H_ma2 + E1_ma2 + E2_ma2 + fm_ma2
 
-        # loss function for NB
+        # NB
         E1_be = -torch.mean(NLogP_be_beMADE * NLogP_be_maMADE.ge(ma_max) * NLogP_be_beMADE.lt(be_MIN))
         E2_be =  torch.mean(NLogP_be_beMADE * NLogP_be_maMADE.ge(ma_max) * NLogP_be_beMADE.gt(be_MAX))
         E3_be = -torch.mean(NLogP_be_maMADE * NLogP_be_maMADE.lt(ma_max))
@@ -204,7 +235,7 @@ def main(feat_dir, model_dir, made_dir, TRAIN, cuda_device):
         optimizer_ma2.step()
 
         if epoch % 10 == 9:
-            # training discriminator
+            # 训练判别器
             
             save_model(BeGenModel, save_name_be)
             save_model(MaGenModel_1, save_name_ma1)
@@ -233,7 +264,7 @@ def main(feat_dir, model_dir, made_dir, TRAIN, cuda_device):
                 D_Gbe = F.softmax(D(Gbe), dim=1)[:, 0]
                 E6_D = torch.mean(torch.log(D_Gbe + reminder * D_Gbe.lt(reminder)))
                 
-                # loss for D
+                # 判别器损失
                 loss_D = E1_D + E2_D + E3_D + E4_D + E5_D + E6_D
 
                 optimizer_D.zero_grad()
