@@ -253,3 +253,176 @@ def main(feat_dir, model_dir, result_dir, TRAIN, cuda_device, parallel=5):
     mlp1.to_cpu()
     torch.save(mlp1, os.path.join(model_dir, 'Detection_Model.pkl'))
 
+def predict_only(feat_dir, model_dir, result_dir, TRAIN, cuda_device, parallel=5):
+    """
+    仅进行预测的分类器函数（不重新训练）
+    
+    该函数加载已训练好的模型，直接在测试集上进行预测，适用于使用最佳模型进行最终预测的场景。
+    
+    参数:
+        feat_dir (str): 特征目录
+        model_dir (str): 模型保存目录（包含 Detection_Model.pkl）
+        result_dir (str): 结果保存目录
+        TRAIN (str): 训练数据标签前缀（虽然不训练，但用于确定数据格式）
+        cuda_device (int|str): CUDA设备ID
+        parallel (int): 并行生成的份数（用于数据格式兼容）
+    """
+    
+    cuda_device = int(cuda_device)
+    device = int(cuda_device) if cuda_device != 'None' else None
+    
+    # 加载已训练的模型
+    model_path = os.path.join(model_dir, 'Detection_Model.pkl')
+    if not os.path.exists(model_path):
+        print(f"❌ 错误：未找到已训练的模型文件 {model_path}")
+        return
+    
+    print(f"📂 加载已训练的分类器模型: {model_path}")
+    mlp1 = torch.load(model_path)
+    
+    if device != None:
+        torch.cuda.set_device(device)
+        mlp1 = mlp1.cuda()
+    
+    # 读取测试集
+    test_data_label = np.load(os.path.join(feat_dir, 'test.npy'))
+    test_data = test_data_label[:, :32]
+    test_label = test_data_label[:, -1]
+    
+    print(f"🔍 对测试集进行预测 (测试样本数: {len(test_data)})")
+    
+    # 测试与保存预测
+    mlp1.eval()
+    test_loader = torch.utils.data.DataLoader(dataset=test_data, batch_size=batch_size, shuffle=False)
+    preds = predict(test_loader, mlp1, device)
+    
+    # 保存预测结果
+    prediction_file = os.path.join(result_dir, 'prediction.npy')
+    np.save(prediction_file, preds)
+    print(f"💾 预测结果已保存到: {prediction_file}")
+    
+    # 计算评估指标
+    scores = np.zeros((2, 2))
+    for label, pred in zip(test_label, preds):
+        scores[int(label), int(pred)] += 1
+    TP = scores[1, 1]
+    FP = scores[0, 1]
+    TN = scores[0, 0]
+    FN = scores[1, 0]
+    
+    Accuracy = (TP + TN) / (TP + TN + FP + FN)
+    Recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
+    Precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
+    F1score = 2 * Recall * Precision / (Recall + Precision) if (Recall + Precision) > 0 else 0.0
+    
+    print(f"📊 最终预测结果:")
+    print(f"   准确率: {Accuracy:.4f}")
+    print(f"   召回率: {Recall:.4f}")  
+    print(f"   精确率: {Precision:.4f}")
+    print(f"   F1分数: {F1score:.4f}")
+    
+    # 保存结果到文件
+    result_file = os.path.join(result_dir, 'final_detection_result.txt')
+    with open(result_file, 'w') as fp:
+        fp.write('=== 最终预测结果（使用最佳模型） ===\n')
+        fp.write('Testing data: Benign/Malicious = %d/%d\n'%((TN + FP), (TP + FN)))
+        fp.write('Recall: %.4f, Precision: %.4f, F1: %.4f\n'%(Recall, Precision, F1score))
+        fp.write('Accuracy: %.4f\n'%(Accuracy))
+    
+    print(f"📄 详细结果已保存到: {result_file}")
+    
+    return F1score
+
+def predict_only_from_file(feat_dir, model_file_path, result_dir, TRAIN, cuda_device, parallel=5):
+    """
+    从指定的模型文件进行预测（不重新训练）
+    
+    该函数从指定的模型文件加载模型，直接在测试集上进行预测。
+    专门用于加载最佳模型文件进行最终预测。
+    
+    参数:
+        feat_dir (str): 特征目录
+        model_file_path (str): 模型文件的完整路径
+        result_dir (str): 结果保存目录
+        TRAIN (str): 训练数据标签前缀
+        cuda_device (int|str): CUDA设备ID
+        parallel (int): 并行生成的份数
+        
+    返回:
+        float: F1分数
+    """
+    
+    cuda_device = int(cuda_device)
+    device = int(cuda_device) if cuda_device != 'None' else None
+    
+    # 检查模型文件是否存在
+    if not os.path.exists(model_file_path):
+        print(f"❌ 错误：模型文件不存在 {model_file_path}")
+        return 0.0
+    
+    print(f"📂 从指定文件加载最佳分类器模型: {model_file_path}")
+    
+    try:
+        # 加载模型
+        mlp1 = torch.load(model_file_path)
+        
+        if device != None:
+            torch.cuda.set_device(device)
+            mlp1 = mlp1.cuda()
+        
+        # 读取测试集
+        test_data_label = np.load(os.path.join(feat_dir, 'test.npy'))
+        test_data = test_data_label[:, :32]
+        test_label = test_data_label[:, -1]
+        
+        print(f"🔍 使用最佳模型对测试集进行预测 (测试样本数: {len(test_data)})")
+        
+        # 测试与保存预测
+        mlp1.eval()
+        test_loader = torch.utils.data.DataLoader(dataset=test_data, batch_size=batch_size, shuffle=False)
+        preds = predict(test_loader, mlp1, device)
+        
+        # 保存预测结果
+        prediction_file = os.path.join(result_dir, 'best_model_prediction.npy')
+        np.save(prediction_file, preds)
+        print(f"💾 最佳模型预测结果已保存到: {prediction_file}")
+        
+        # 计算评估指标
+        scores = np.zeros((2, 2))
+        for label, pred in zip(test_label, preds):
+            scores[int(label), int(pred)] += 1
+        TP = scores[1, 1]
+        FP = scores[0, 1]
+        TN = scores[0, 0]
+        FN = scores[1, 0]
+        
+        Accuracy = (TP + TN) / (TP + TN + FP + FN)
+        Recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
+        Precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
+        F1score = 2 * Recall * Precision / (Recall + Precision) if (Recall + Precision) > 0 else 0.0
+        
+        print(f"📊 最佳模型预测结果:")
+        print(f"   准确率: {Accuracy:.4f}")
+        print(f"   召回率: {Recall:.4f}")  
+        print(f"   精确率: {Precision:.4f}")
+        print(f"   F1分数: {F1score:.4f}")
+        
+        # 保存结果到文件
+        result_file = os.path.join(result_dir, 'best_model_final_result.txt')
+        with open(result_file, 'w') as fp:
+            fp.write('=== 最佳模型最终预测结果 ===\n')
+            fp.write(f'使用的模型文件: {model_file_path}\n')
+            fp.write('Testing data: Benign/Malicious = %d/%d\n'%((TN + FP), (TP + FN)))
+            fp.write('Recall: %.4f, Precision: %.4f, F1: %.4f\n'%(Recall, Precision, F1score))
+            fp.write('Accuracy: %.4f\n'%(Accuracy))
+        
+        print(f"📄 最佳模型详细结果已保存到: {result_file}")
+        
+        return F1score
+        
+    except Exception as e:
+        print(f"❌ 从文件加载模型时出错: {e}")
+        import traceback
+        traceback.print_exc()
+        return 0.0
+
