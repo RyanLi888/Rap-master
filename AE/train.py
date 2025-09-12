@@ -19,6 +19,14 @@ import torch.nn as nn
 import sys
 import os
 
+# 导入随机种子控制模块
+sys.path.append('../utils')
+try:
+    from random_seed import deterministic_shuffle, RANDOM_CONFIG
+    SEED_CONTROL_AVAILABLE = True
+except ImportError:
+    SEED_CONTROL_AVAILABLE = False
+
 # 训练超参数
 batch_size = 128        # 批次大小
 Max_epochs = 1000       # 最大训练轮数
@@ -42,7 +50,14 @@ def main(data_dir, model_dir, device):
     
     # 合并良性 and 恶性样本，只使用前50个特征维度（时间序列数据）
     train_data = np.concatenate([train_data_be[:, :50], train_data_ma[:, :50]], axis=0)
-    np.random.shuffle(train_data)  # 随机打乱数据顺序
+    
+    # 使用确定性打乱数据顺序
+    if SEED_CONTROL_AVAILABLE:
+        train_data = deterministic_shuffle(train_data, seed=RANDOM_CONFIG['ae_seed'])
+        print("✅ AE: 使用确定性数据打乱")
+    else:
+        np.random.shuffle(train_data)  # 原始随机打乱
+        print("⚠️  AE: 使用非确定性数据打乱")
     
     # 备用数据加载方式（已注释）
     #train_data = np.load(os.path.join(data_dir, 'all.npy'))[:, :50]

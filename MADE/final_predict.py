@@ -20,6 +20,15 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.linear_model import LogisticRegression
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
+# 导入随机种子控制模块
+import sys
+sys.path.append('../utils')
+try:
+    from random_seed import deterministic_shuffle, RANDOM_CONFIG
+    SEED_CONTROL_AVAILABLE = True
+except ImportError:
+    SEED_CONTROL_AVAILABLE = False
+
 # 使用多模型集成来纠正剩余样本标签
 def main(feat_dir):
     """
@@ -134,8 +143,16 @@ def main(feat_dir):
 
     be_all_final = np.array(be_all_final)
     ma_all_final = np.array(ma_all_final)
-    np.random.shuffle(be_all_final)
-    np.random.shuffle(ma_all_final)
+    
+    # 使用确定性打乱
+    if SEED_CONTROL_AVAILABLE:
+        be_all_final = deterministic_shuffle(be_all_final, seed=RANDOM_CONFIG['made_seed'])
+        ma_all_final = deterministic_shuffle(ma_all_final, seed=RANDOM_CONFIG['made_seed'] + 1000)
+        print("✅ MADE final_predict: 使用确定性数据打乱")
+    else:
+        np.random.shuffle(be_all_final)
+        np.random.shuffle(ma_all_final)
+        print("⚠️  MADE final_predict: 使用非确定性数据打乱")
     np.save(os.path.join(feat_dir, 'be_corrected.npy'), be_all_final)
     np.save(os.path.join(feat_dir, 'ma_corrected.npy'), ma_all_final)
     

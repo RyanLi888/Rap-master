@@ -23,6 +23,14 @@ from tqdm import tqdm
 
 from .loss import loss_coteaching
 
+# 导入随机种子控制模块
+sys.path.append('../utils')
+try:
+    from random_seed import deterministic_shuffle, create_deterministic_dataloader, RANDOM_CONFIG
+    SEED_CONTROL_AVAILABLE = True
+except ImportError:
+    SEED_CONTROL_AVAILABLE = False
+
 # 超参数
 batch_size = 128
 learning_rate = 1e-3
@@ -168,9 +176,20 @@ def main(feat_dir, model_dir, result_dir, TRAIN, cuda_device, parallel=5):
         be_gen = np.load(os.path.join(feat_dir, 'be_%s_generated_GAN_%d.npy' % (TRAIN, index)))
         ma_gen1 = np.load(os.path.join(feat_dir, 'ma_%s_generated_GAN_1_%d.npy' % (TRAIN, index)))
         ma_gen2 = np.load(os.path.join(feat_dir, 'ma_%s_generated_GAN_2_%d.npy' % (TRAIN, index)))
-        np.random.shuffle(be_gen)
-        np.random.shuffle(ma_gen1)
-        np.random.shuffle(ma_gen2)
+        
+        # 使用确定性打乱
+        if SEED_CONTROL_AVAILABLE:
+            be_gen = deterministic_shuffle(be_gen, seed=RANDOM_CONFIG['classifier_seed'] + index)
+            ma_gen1 = deterministic_shuffle(ma_gen1, seed=RANDOM_CONFIG['classifier_seed'] + index + 1000)
+            ma_gen2 = deterministic_shuffle(ma_gen2, seed=RANDOM_CONFIG['classifier_seed'] + index + 2000)
+            if index == 0:
+                print("✅ 分类器: 使用确定性数据打乱")
+        else:
+            np.random.shuffle(be_gen)
+            np.random.shuffle(ma_gen1)
+            np.random.shuffle(ma_gen2)
+            if index == 0:
+                print("⚠️  分类器: 使用非确定性数据打乱")
         be = np.concatenate([
             be, 
             be_gen[:be_shape // (parallel)], 
@@ -200,7 +219,12 @@ def main(feat_dir, model_dir, result_dir, TRAIN, cuda_device, parallel=5):
         torch.cuda.set_device(device)
     # 数据加载器
     print('loading dataset...')
-    train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
+    if SEED_CONTROL_AVAILABLE:
+        train_loader = create_deterministic_dataloader(train_dataset, batch_size, shuffle=True, seed=RANDOM_CONFIG['classifier_seed'])
+        print("✅ 分类器: 使用确定性数据加载器")
+    else:
+        train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
+        print("⚠️  分类器: 使用非确定性数据加载器")
     # 定义两个MLP模型与优化器
     print('building model...')
     mlp1 = MLP(input_size=32, hiddens=[16, 8], output_size=2, device=device)

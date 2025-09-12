@@ -61,6 +61,16 @@ import Classifier
 import AE
 import numpy as np # Added for evaluate_complete_pipeline
 
+# 导入随机种子控制模块
+sys.path.append('../utils')
+try:
+    from random_seed import set_random_seed, RANDOM_CONFIG
+    SEED_CONTROL_AVAILABLE = True
+    print("✅ 随机种子控制模块导入成功")
+except ImportError:
+    print("⚠️  警告：随机种子控制模块导入失败，将使用默认行为")
+    SEED_CONTROL_AVAILABLE = False
+
 def generate(feat_dir, model_dir, made_dir, index, cuda):
     """
     生成指定索引的对抗样本
@@ -174,16 +184,17 @@ def evaluate_complete_pipeline(feat_dir, model_dir, result_dir, TRAIN, cuda):
 
 
 
-def main(data_dir, model_dir, feat_dir, made_dir, result_dir, cuda):
+def main(data_dir, model_dir, feat_dir, made_dir, result_dir, cuda, random_seed=None):
     """
     主函数 - 执行完整的RAPIER流程并与历史最佳模型对比
     
     该函数实现了RAPIER系统的完整工作流程：
-    1. 加载历史最佳F1分数和模型路径
-    2. 训练当前模型（AE、MADE、分类器）
-    3. 评估当前模型的F1分数
-    4. 与历史最佳进行对比，如果更好则保存新的最佳模型
-    5. 使用最佳模型进行最终分类
+    1. 设置随机种子确保可重复性
+    2. 加载历史最佳F1分数和模型路径
+    3. 训练当前模型（AE、MADE、分类器）
+    4. 评估当前模型的F1分数
+    5. 与历史最佳进行对比，如果更好则保存新的最佳模型
+    6. 使用最佳模型进行最终分类
     
     参数:
         data_dir (str): 原始数据目录路径
@@ -192,7 +203,17 @@ def main(data_dir, model_dir, feat_dir, made_dir, result_dir, cuda):
         made_dir (str): MADE相关文件目录路径
         result_dir (str): 结果输出目录路径
         cuda (int): CUDA设备ID
+        random_seed (int): 全局随机种子，默认使用配置中的种子
     """
+    
+    # 【第0步】设置随机种子确保可重复性
+    if SEED_CONTROL_AVAILABLE:
+        if random_seed is None:
+            random_seed = RANDOM_CONFIG['global_seed']
+        set_random_seed(random_seed)
+        print(f"🎯 已设置全局随机种子: {random_seed}")
+    else:
+        print("⚠️  跳过随机种子设置（模块不可用）")
     
     print("开始RAPIER完整流程训练，将与历史最佳模型对比...")
     
