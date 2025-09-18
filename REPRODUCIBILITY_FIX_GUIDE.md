@@ -81,7 +81,7 @@ cd E:\Project\Python\RAPIER-master
 
 # 步骤2: 直接运行（使用默认种子42）
 python main/main.py
-
+CUDA_VISIBLE_DEVICES=5 nohup python main.py > output.log 2>&1 &
 # 步骤3: 查看结果
 # 程序会输出F1分数，并保存结果到data/result/目录
 ```
@@ -99,7 +99,7 @@ python main/main.py
 ```bash
 # 步骤1: 运行种子搜索（耗时较长，建议预留1-2小时）
 python find_best_seed.py
-
+CUDA_VISIBLE_DEVICES=5 nohup python find_best_seed.py > output.log 2>&1 &
 # 步骤2: 根据提示选择是否更新代码使用最佳种子
 # 程序会自动找到最佳种子并询问是否更新
 

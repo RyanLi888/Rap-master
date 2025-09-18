@@ -1,0 +1,5 @@
+F1分数: 0.0236
+AE模型: ../data/model_best/best_ae_f1_0.0236_20250918_152531.pkl
+MADE模型: ../data/model_best/best_made_f1_0.0236_20250918_152531.pt
+分类器模型: ../data/model_best/best_classifier_f1_0.0236_20250918_152531.pkl
+更新时间: 20250918_152531
