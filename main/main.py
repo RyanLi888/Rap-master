@@ -140,10 +140,19 @@ def main(data_dir, model_dir, feat_dir, made_dir, result_dir, cuda, random_seed=
     # parallel=1: 获得最佳F1分数 0.7911
     # 使用完整的GAN数据而不是分散的小片段
     # ================================
+    # 先训练分类器并保存模型
+    print("🔧 训练分类器模型...")
+    Classifier.classify.main(feat_dir, model_dir, result_dir, TRAIN, cuda, parallel=1)
+    
+    # 然后使用训练好的模型进行预测
+    print("🔍 使用训练好的模型进行预测...")
     final_f1 = Classifier.classify.predict_only(feat_dir, model_dir, result_dir, TRAIN, cuda, parallel=1)
     
     print(f"\n🎉 RAPIER流程完成！")
-    print(f"📊 最终F1分数: {final_f1:.4f}")
+    if final_f1 is not None:
+        print(f"📊 最终F1分数: {final_f1:.4f}")
+    else:
+        print("📊 最终F1分数: 无法计算（模型文件缺失）")
     print(f"🎯 使用的随机种子: {random_seed}")
     
     return final_f1

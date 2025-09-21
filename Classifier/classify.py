@@ -299,7 +299,7 @@ def predict_only(feat_dir, model_dir, result_dir, TRAIN, cuda_device, parallel=1
     model_path = os.path.join(model_dir, 'Detection_Model.pkl')
     if not os.path.exists(model_path):
         print(f"❌ 错误：未找到已训练的模型文件 {model_path}")
-        return
+        return 0.0
     
     print(f"📂 加载已训练的分类器模型: {model_path}")
     mlp1 = torch.load(model_path)
