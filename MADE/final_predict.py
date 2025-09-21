@@ -30,9 +30,13 @@ except ImportError:
     SEED_CONTROL_AVAILABLE = False
 
 # 使用多模型集成来纠正剩余样本标签
-def main(feat_dir):
+def main(feat_dir, result_dir=None):
     """
     使用多个传统机器学习模型对样本进行投票纠错
+    
+    参数:
+        feat_dir (str): 特征文件目录
+        result_dir (str): 结果输出目录，默认为 ../data/result
     
     步骤：
     1) 读取 groundtruth 与 unknown 集合
@@ -162,7 +166,16 @@ def main(feat_dir):
     print('malicious in benign set: %d/%d'%(be_all_final.shape[0], wrong_be))
     print('benign in malicious set: %d/%d'%(ma_all_final.shape[0], wrong_ma))
     
-    with open('../data/result/label_correction.txt', 'w') as fp:
+    # 确定输出目录
+    if result_dir is None:
+        result_dir = '../data/result'
+    
+    # 确保结果目录存在
+    os.makedirs(result_dir, exist_ok=True)
+    
+    # 写入标签纠错结果
+    label_correction_file = os.path.join(result_dir, 'label_correction.txt')
+    with open(label_correction_file, 'w') as fp:
         fp.write('malicious in benign set: %d(%d)\n'%(wrong_be, be_all_final.shape[0]))
         fp.write('benign in malicious set: %d(%d)\n'%(wrong_ma, ma_all_final.shape[0]))
         fp.write('Remaining noise ratio: %.2f%%\n'%(100 * (wrong_be + wrong_ma) / (be_all_final.shape[0] + ma_all_final.shape[0])))

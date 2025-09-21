@@ -145,7 +145,7 @@ def predict(test_loader, model, device, alpha=0.5):
 
     return np.concatenate(preds, axis=0)
 
-def main(feat_dir, model_dir, result_dir, TRAIN, cuda_device, parallel=5):
+def main(feat_dir, model_dir, result_dir, TRAIN, cuda_device, parallel=1):
     """
     分类器训练与预测主流程
     
@@ -262,9 +262,9 @@ def main(feat_dir, model_dir, result_dir, TRAIN, cuda_device, parallel=5):
     FN = scores[1, 0]
     
     Accuracy = (TP + TN) / (TP + TN + FP + FN)
-    Recall = TP / (TP + FN)
-    Precision = TP / (TP + FP)
-    F1score = 2 * Recall * Precision / (Recall + Precision)
+    Recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
+    Precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
+    F1score = 2 * Recall * Precision / (Recall + Precision) if (Recall + Precision) > 0 else 0.0
     print(Recall, Precision, F1score)
     
     with open('../data/result/detection_result.txt', 'w') as fp:
@@ -277,7 +277,7 @@ def main(feat_dir, model_dir, result_dir, TRAIN, cuda_device, parallel=5):
     mlp1.to_cpu()
     torch.save(mlp1, os.path.join(model_dir, 'Detection_Model.pkl'))
 
-def predict_only(feat_dir, model_dir, result_dir, TRAIN, cuda_device, parallel=5):
+def predict_only(feat_dir, model_dir, result_dir, TRAIN, cuda_device, parallel=1):
     """
     仅进行预测的分类器函数（不重新训练）
     
@@ -357,7 +357,7 @@ def predict_only(feat_dir, model_dir, result_dir, TRAIN, cuda_device, parallel=5
     
     return F1score
 
-def predict_only_from_file(feat_dir, model_file_path, result_dir, TRAIN, cuda_device, parallel=5):
+def predict_only_from_file(feat_dir, model_file_path, result_dir, TRAIN, cuda_device, parallel=1):
     """
     从指定的模型文件进行预测（不重新训练）
     
